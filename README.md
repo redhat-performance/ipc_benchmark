@@ -62,13 +62,22 @@ Also we make the benchmark on travis-ci [![Build Status](https://travis-ci.org/d
 To contribute to ipc_benchmark, clone this repo locally and commit your code on a separate branch. 
 
 
-# Author
-------
-
-> GitHub [@detailyang](https://github.com/detailyang)     
-
-
 # License
 -------
 
-ipc_benchmark is licensed under the [MIT](https://github.com/detailyang/ipc_benchmark/blob/master/LICENSE) license.  
+ipc_benchmark is based on [ipc_benchmark](https://github.com/detailyang/ipc_benchmark)
+licensed under the [MIT](LICENSE.MIT) license, Copyright (c) 2017
+[@detailyang](https://github.com/detailyang)
+
+The [original fork of this
+repository](https://github.com/redhat-performance/ipc_benchmark/tree/4e1f6788c5b792959ac19fc5ba6d9f958ce4ba83)
+represents the original MIT licensed state of the code.
+
+New work in this repository is licensed under the [Apache 2.0](LICENSE.Apache-2.0)
+license.
+
+Please [review the diff of
+changes](https://github.com/redhat-performance/ipc_benchmark/compare/4e1f678..main) to
+understand the license application.
+
+`SPDX-License-Identifier: Apache-2.0 AND MIT`
