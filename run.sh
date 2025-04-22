@@ -1,25 +1,29 @@
 #! /bin/bash
 
 # Tests file binaries and test sizes
+#
 
-ipc_tests="uds udp shm fifo pipe"
-#ipc_tests="shm tcp fifo pipe"
+ulimit -s unlimited
+
+ipc_tests="shm fifo"
 
 udp_sizes="128 256 512 1024 2048 4096"
 uds_sizes="128 256 512 1024 2048 4096 8192 32768"
 socketpair_sizes="128 256 512 1024 2048 4096 8192 32768"
 ipc_sizes="128 256 512 1024 2048 4096 8192 32768 65536"
 ipc_sizes_full="128 256 512 1024 2048 4096 8192 32768 65536"
+mins="1"
 
-ipc_count=100000
-udp_count=5000
-tcp_count=10700
-pipe_count=90100
-shm_count=10030
-fifo_count=20010
-udp_count=20000
-uds_count=22030
-shm_count=21000
+ipc_count=20000000
+udp_count=20000000
+tcp_count=20700000
+pipe_count=20000000
+shm_count=20000000
+fifo_count=20010000
+udp_count=20000000
+uds_count=22030000
+shm_count=21000000
+posixq_count=21020000
 
 # Write to log file, keeps echo parameters
 write_log()
@@ -46,8 +50,7 @@ done
 logfile=$(mktemp /tmp/ipc.XXXXXX)
 write_log "The IPC default count value is:  ${ipc_count}"
 
-#for iter in 1 2 3 4 5
-for iter in 1 2 
+for iter in 1 2 3 4 5
 do
 # Call the test
   for test in ${ipc_tests}
@@ -78,13 +81,25 @@ do
                 ipc_sizes=${ipc_sizes_full}
                 ipc_count=${fifo_count}
 		    ;;
+	    "fifo-2way-1stamp")
+                ipc_sizes=${ipc_sizes_full}
+                ipc_count=${fifo_count}
+		    ;;
 	    "shm")
+                ipc_sizes=${ipc_sizes_full}
+                ipc_count=${shm_count}
+		    ;;
+	    "shm-2way-1stamp")
                 ipc_sizes=${ipc_sizes_full}
                 ipc_count=${shm_count}
 		    ;;
 	    "uds")
                 ipc_sizes=${ipc_sizes_full}
                 ipc_count=${uds_count}
+		    ;;
+	    "posixq")
+                ipc_sizes=${ipc_sizes_full}
+                ipc_count=${posixq_count}
 		    ;;
 	    *)
                 ipc_sizes=${ipc_sizes_full}
@@ -105,7 +120,7 @@ do
 
     for tsize in ${ipc_sizes}
     do
-	    ./${test} ${tsize} ${ipc_count} > results.txt
+	    ./${test} ${tsize} ${ipc_count} ${mins} ${iter} > results.txt
 	    line0="${line0}|${tsize}"
 	    sleep 1
 	    line1="${line1}|$(grep MB results.txt)"
