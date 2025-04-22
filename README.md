@@ -1,6 +1,21 @@
 # ipc_benchmark
 IPC benchmark on Linux which is inspired by [APUE](http://www.apuebook.com/)
 
+## IPC programs
+
+These programs run various IPC protocols to pass messages between two processes.  It is currently runs with these messages sizes:
+128, 256, 512, 1024, 2048, 4096, 8192, 32768, and 65536.
+Any size message size can be supplied.
+
+They report messages/sec and MiB/sec.  They also report latency measurements.  The average, minimum, maximum, 95th and 99th percentage are calculated and shown.
+
+To run these IPC programs:
+
+```bash
+ make all
+./run.sh
+```
+
 # Test
 
 Just Make style as the following :D

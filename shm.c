@@ -59,6 +59,24 @@ double getdetlatimeofday(struct timeval *begin, struct timeval *end)
            (begin->tv_sec + begin->tv_usec * 1.0 / 1000000);
 }
 
+double
+time_diff(struct timeval x , struct timeval y)
+{
+    double x_ms , y_ms , diff;
+
+    x_ms = (double)x.tv_sec*1000000 + (double)x.tv_usec;
+    y_ms = (double)y.tv_sec*1000000 + (double)y.tv_usec;
+
+    diff = (double)y_ms - (double)x_ms;
+    return diff;
+}
+
+int compare_double( const void* a, const void* b )
+{
+    if( *(double*)a == *(double*)b ) return 0;
+    return *(double*)a < *(double*)b ? -1 : 1;
+}
+
 int main(int argc, char const *argv[])
 {
 #define SHM_KEY 0x1234
@@ -69,8 +87,16 @@ int main(int argc, char const *argv[])
     pid_t pid;
     int sem_id;
     int shm_id;
-    int count, i, size;
+    long count, size;
+    int i;
     struct timeval begin, end;
+
+    struct timeval tv_post_read;
+
+    double time_elapsed;
+    double avg_elapsed, tot_elapsed;
+
+    int ninetyninth, ninetyfifth;  // 95th% and 99th% latencies
 
     if (argc != 3)
     {
@@ -80,8 +106,17 @@ int main(int argc, char const *argv[])
 
     size = atoi(argv[1]);
     count = atoi(argv[2]);
-    unsigned char *buf = malloc(size);
 
+    double latencies[count];
+
+    struct mybuf {
+            int seq;
+            struct timeval tv_time_sent;
+            char *rest;
+    } *buf;
+
+    buf=malloc(size);
+    
     pid = fork();
     if (pid == -1)
     {
@@ -118,7 +153,29 @@ int main(int argc, char const *argv[])
             memcpy(buf, addr, size);
             // printf(">>>>>>>>%d\n", *(int*)buf);
             sem_release(sem_id, WRITE_SEM);
-        }
+	    if (i == buf->seq) {
+                gettimeofday(&tv_post_read, NULL);
+                time_elapsed = time_diff(buf->tv_time_sent, tv_post_read);
+                latencies[i]= time_elapsed;
+                tot_elapsed+=time_elapsed;
+            }
+            else {
+                    printf("buf seq= %d    %d\n", buf->seq, i);
+                    printf("We did not match a sequence.\n");
+                    exit(1);
+            } 
+	}
+	avg_elapsed = tot_elapsed/count;
+        ninetyninth=(count*0.99)-1;
+        ninetyfifth=(count*0.95)-1;
+        qsort( latencies, count, sizeof(double), compare_double );
+
+        printf("%.0fusMIN\n", latencies[0]);
+        printf("%.0fusAVG\n", avg_elapsed);
+        printf("%.0fusMAX\n", latencies[count-1]);
+        printf("%.0fus95th\n", latencies[ninetyfifth]);
+        printf("%.0fus99th\n", latencies[ninetyninth]);
+        
 
         if (shmdt(addr) == -1)
         {
@@ -153,6 +210,8 @@ int main(int argc, char const *argv[])
 
         for (i = 0; i < count; i++)
         {
+	    buf->seq=i;
+            gettimeofday(&buf->tv_time_sent, NULL);
             sem_reserve(sem_id, WRITE_SEM);
             // *(int*)buf = i;
             memcpy(addr, buf, size);
@@ -162,9 +221,9 @@ int main(int argc, char const *argv[])
         gettimeofday(&end, NULL);
 
         double tm = getdetlatimeofday(&begin, &end);
-        printf("%.0fMB/s %.0fmsg/s\n",
-               count * size * 1.0 / (tm * 1024 * 1024),
-               count * 1.0 / tm);
+        printf("%.0fMB/s\n", count * size * 1.0 / (tm * 1024 * 1024));
+        printf("%.0fmsg/s\n", count * 1.0 / tm);
+
 
         sem_reserve(sem_id, WRITE_SEM);
         semun dummy = {0};
