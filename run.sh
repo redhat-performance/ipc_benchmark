@@ -2,28 +2,25 @@
 
 # Tests file binaries and test sizes
 #
+#
+#
+
+date
+starttime=`date`
 
 ulimit -s unlimited
+ipcrm --all
 
-ipc_tests="shm fifo"
+ipc_tests="uds fifo shm"
+#ipc_tests="shm fifo uds"
 
 udp_sizes="128 256 512 1024 2048 4096"
-uds_sizes="128 256 512 1024 2048 4096 8192 32768"
+uds_sizes="64 128 256 512 1024 2048 4096 8192 32768"
 socketpair_sizes="128 256 512 1024 2048 4096 8192 32768"
 ipc_sizes="128 256 512 1024 2048 4096 8192 32768 65536"
 ipc_sizes_full="128 256 512 1024 2048 4096 8192 32768 65536"
-mins="1"
 
-ipc_count=20000000
-udp_count=20000000
-tcp_count=20700000
-pipe_count=20000000
-shm_count=20000000
-fifo_count=20010000
-udp_count=20000000
-uds_count=22030000
-shm_count=21000000
-posixq_count=21020000
+mins="1"
 
 # Write to log file, keeps echo parameters
 write_log()
@@ -48,7 +45,6 @@ do
 done
 
 logfile=$(mktemp /tmp/ipc.XXXXXX)
-write_log "The IPC default count value is:  ${ipc_count}"
 
 for iter in 1 2 3 4 5
 do
@@ -59,51 +55,36 @@ do
     case $test in
 	    "udp")
                 ipc_sizes=${udp_sizes}
-                ipc_count=${udp_count}
 		;;
 	    "uds")
                 ipc_sizes=${uds_sizes}
-                ipc_count=${uds_count}
 		;;
             "socketpair")
                 ipc_sizes=${socketpair_sizes}
-                ipc_count=${ipc_count}
 		;;
 	    "tcp")
                 ipc_sizes=${ipc_sizes_full}
-                ipc_count=${tcp_count}
 		;;
             "pipe")
                 ipc_sizes=${ipc_sizes_full}
-                ipc_count=${pipe_count}
 		    ;;
 	    "fifo")
                 ipc_sizes=${ipc_sizes_full}
-                ipc_count=${fifo_count}
 		    ;;
 	    "fifo-2way-1stamp")
                 ipc_sizes=${ipc_sizes_full}
-                ipc_count=${fifo_count}
 		    ;;
 	    "shm")
                 ipc_sizes=${ipc_sizes_full}
-                ipc_count=${shm_count}
 		    ;;
 	    "shm-2way-1stamp")
                 ipc_sizes=${ipc_sizes_full}
-                ipc_count=${shm_count}
-		    ;;
-	    "uds")
-                ipc_sizes=${ipc_sizes_full}
-                ipc_count=${uds_count}
 		    ;;
 	    "posixq")
                 ipc_sizes=${ipc_sizes_full}
-                ipc_count=${posixq_count}
 		    ;;
 	    *)
                 ipc_sizes=${ipc_sizes_full}
-                ipc_count=${ipc_count}
 		    ;;
     esac
 
@@ -116,11 +97,11 @@ do
     line6=""
     line7=""
 
-    write_log "${test} ${ipc_count}" 
+    write_log "${test}" 
 
     for tsize in ${ipc_sizes}
     do
-	    ./${test} ${tsize} ${ipc_count} ${mins} ${iter} > results.txt
+	    ./${test} ${tsize} ${mins} ${iter} > results.txt
 	    line0="${line0}|${tsize}"
 	    sleep 1
 	    line1="${line1}|$(grep MB results.txt)"
@@ -148,5 +129,11 @@ do
   rm ${logfile}
   done
 done
+
+date
+endtime=`date`
+
+echo "script started:  " $starttime
+echo "script ended  :  " $endtime
 
 exit
