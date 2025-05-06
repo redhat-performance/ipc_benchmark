@@ -12,7 +12,7 @@
 #define SECONDS_PER_MINUTE 60 
 #define SIZE_OF_USED_BUFFER 24    /* we put a sequence number and a timestamp at the beginning
                                   of the buffer */
-#define  ARRAY_BOOST 20000        /* The size of the array initially and how much to increase it's
+#define ARRAY_BOOST 20000         /* The size of the array initially and how much to increase it's
                                   size as it grows */  
 
 
@@ -53,7 +53,6 @@
 int populate_buf(char *, int);
 double getdetlatimeofday(struct timeval *, struct timeval *);
 double time_diff(struct timeval , struct timeval );
-
 
 typedef union {
     int val;
@@ -100,12 +99,15 @@ void sem_reserve(int sem_id, int sem_num)
     }
 }
 
-double getdetlatimeofday(struct timeval *begin, struct timeval *end)
+/* get the delta between two time snapshots */ 
+double 
+getdetlatimeofday(struct timeval *begin, struct timeval *end)
 {
     return (end->tv_sec + end->tv_usec * 1.0 / 1000000) -
            (begin->tv_sec + begin->tv_usec * 1.0 / 1000000);
 }
 
+/* determine the latency between two timestamps */
 double
 time_diff(struct timeval x , struct timeval y)
 {
@@ -142,7 +144,6 @@ int populate_buf(char *buffer, int length) {
     }
     return 0;
 }
-
 
 /* ================================================================================================================================= */
 
@@ -182,7 +183,7 @@ int main(int argc, char const *argv[])
 
     if (argc != 4)
     {
-        printf("usage: ./shm <message size> <mins_to_run> <run_number> \n");
+        printf("usage: ./shm <message_size> <mins_to_run> <run_number> \n");
         return 1;
     }
    
@@ -277,24 +278,19 @@ int main(int argc, char const *argv[])
             return -1;
         }
 
-        msgtot=0;
+        //msgtot=0;
 
         start = time(NULL);
         while (time(NULL) - start < (time_t) (( mins * SECONDS_PER_MINUTE) + 1.0))  {    // run for "mins" minutes
             sem_reserve(sem_id1, READ_SEM);
             memcpy(buf, addr1, size);          // receive message 1st time
             sem_release(sem_id1, WRITE_SEM);
-	        if (msgtot == buf->seq) {          // ensure correct ordering		
-                 sem_reserve(sem_id2, WRITE_SEM);
-                 memcpy(addr2, buf, size);     // send message back to parent
-                 sem_release(sem_id2, READ_SEM);
-            }
-            else {
-                 printf("xxxxxxbuf seq= %d    %ld\n", buf->seq, msgtot);
-                 printf("We did not match a sequence going to.\n");
-                 exit(-1);
-            } 
-	        msgtot++;
+	        	
+            sem_reserve(sem_id2, WRITE_SEM);
+            memcpy(addr2, buf, size);          // send message back to parent
+            sem_release(sem_id2, READ_SEM);
+             
+	 //   msgtot++;
         }
 
         if (shmdt(addr1) == -1)
@@ -352,7 +348,6 @@ int main(int argc, char const *argv[])
         }
 
         gettimeofday(&begin, NULL);
-
         start = time(NULL);
 
         msgtot=0;
@@ -368,54 +363,49 @@ int main(int argc, char const *argv[])
             memcpy(buf, addr2, size);                // receive message back from parent
             sem_release(sem_id2, WRITE_SEM);
             // printf("buf2=%s\n", (char*) buf+SIZE_OF_USED_BUFFER);
+              
+            gettimeofday(&tv_post_read, NULL);   // capture round trip timestamp
+            time_elapsed = time_diff(buf->tv_time_sent, tv_post_read);    // get latency
+            lat[msgtot].start_time = ((double) buf->tv_time_sent.tv_sec*1000000 + (double)buf->tv_time_sent.tv_usec);
+            latencies[msgtot] = time_elapsed;
+            lat[msgtot].end_time = ((double) tv_post_read.tv_sec*1000000 + (double)tv_post_read.tv_usec);
+            tot_elapsed += time_elapsed;                    
+                                
+	    msgtot++;
             if  (msgtot == new_size)  {
                 new_size += ARRAY_BOOST;
-                        double *latencies_tmp = realloc(latencies, new_size * sizeof(double)); 
+                double *latencies_tmp = realloc(latencies, new_size * sizeof(double));
                 if (latencies_tmp == NULL)  {
-                printf("Size increase of latencies array failed.\n");
-                        return 1;
+                    printf("Size increase of the latencies array failed.\n");
+                    return 1;
                 }
     
                 latencies_arr *lat_tmp = realloc(lat, new_size * sizeof(latencies_arr));
                 if (lat_tmp == NULL)  {
-                printf("Size increase of lat structure array failed.\n");
-                        return 1;
+                    printf("Size increase of the lat structure array failed.\n"); 
+                    return 1;
                 }
                 latencies = latencies_tmp;
                 lat = lat_tmp;
              }
-             if (msgtot == buf->seq) {                // ensure correct ordering
-                gettimeofday(&tv_post_read, NULL);   // capture round trip timestamp
-                time_elapsed = time_diff(buf->tv_time_sent, tv_post_read);    // get latency
-                lat[msgtot].start_time = ((double) buf->tv_time_sent.tv_sec*1000000 + (double)buf->tv_time_sent.tv_usec);
-                latencies[msgtot] = time_elapsed;
-                lat[msgtot].end_time = ((double) tv_post_read.tv_sec*1000000 + (double)tv_post_read.tv_usec);
-                tot_elapsed += time_elapsed;
-            }
-            else {
-                    printf("buf seq= %d    %ld\n", buf->seq, msgtot);
-                    printf("We did not match a sequence coming back.\n");
-                    exit(1);
-            } 
-	        msgtot++;
         }
 
         gettimeofday(&end, NULL);
 
         double tm = getdetlatimeofday(&begin, &end);
 
-        printf("%.0fMB/s\n", msgtot * size * 1.0 / (tm * 1024 * 1024));
-        printf("%.0fmsg/s\n", msgtot * 1.0 / tm);
+        printf("%.0fMB/s\n", (msgtot*2) * size * 1.0 / (tm * 1024 * 1024));  // we double msgtot as the message went to parent and back
+        printf("%.0fmsg/s\n", (msgtot*2) * 1.0 / tm);
 
         avg_elapsed = tot_elapsed/msgtot;
         ninetyninth = (msgtot*0.99)-1;
         ninetyfifth = (msgtot*0.95)-1;
 
-        fprintf(outfile_latencies, "{\n");            // write out latency data
+        fprintf(outfile_latencies, "[\n");            // write out latency data
         for (ctr = 0; ctr < msgtot-1; ctr++) {
-            fprintf(outfile_latencies, "  {\"start-time\": %.0f, \"latency\": %.0f, \"end-time\": %.0f},\n ", lat[ctr].start_time, latencies[ctr], lat[ctr].end_time);
+            fprintf(outfile_latencies, "  {\"start-time\": %.0f, \"latency\": %.0f, \"end-time\": %.0f},\n", lat[ctr].start_time, latencies[ctr], lat[ctr].end_time);
         } 
-        fprintf(outfile_latencies, "  {\"start-time\": %.0f, \"latency\": %.0f, \"end-time\": %.0f}\n}", lat[msgtot-1].start_time, latencies[msgtot-1], lat[msgtot-1].end_time);
+        fprintf(outfile_latencies, "  {\"start-time\": %.0f, \"latency\": %.0f, \"end-time\": %.0f}\n]", lat[msgtot-1].start_time, latencies[msgtot-1], lat[msgtot-1].end_time);
 
         qsort( latencies, msgtot, sizeof(double), compare_double );
 
@@ -447,9 +437,9 @@ int main(int argc, char const *argv[])
         shmctl(shm_id2, IPC_RMID, 0);
         
    }
-    free(latencies);
-    free(lat);
-    fclose(outfile_latencies);
+   free(latencies);
+   free(lat);
+   fclose(outfile_latencies);
 
-    return 0;
+   return 0;
 }

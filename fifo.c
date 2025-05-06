@@ -11,9 +11,8 @@
 #define SECONDS_PER_MINUTE 60
 #define SIZE_OF_USED_BUFFER 24    /* we put a sequence number and a timestamp at the beginning
                                   of the buffer */
-#define  ARRAY_BOOST 20000        /* The size of the array initially and how much to increase it's
+#define ARRAY_BOOST 20000         /* The size of the array initially and how much to increase it's
                                   size as it grows */  
-
 
 /* Author:   Matt Currier
  * 
@@ -53,7 +52,7 @@ int populate_buf(char *, int);
 double getdetlatimeofday(struct timeval *, struct timeval *);
 double time_diff(struct timeval , struct timeval );
 
-
+/* get the delta between two time snapshots */ 
 double
 getdetlatimeofday(struct timeval *begin, struct timeval *end)
 {
@@ -61,6 +60,7 @@ getdetlatimeofday(struct timeval *begin, struct timeval *end)
            (begin->tv_sec + begin->tv_usec * 1.0 / 1000000);
 }
 
+/* determine the latency between two timestamps */
 double 
 time_diff(struct timeval x , struct timeval y)
 {
@@ -127,7 +127,7 @@ int main(int argc, char *argv[]) {
     int ninetyninth, ninetyfifth;  // 95th% and 99th% latencies
 
     if (argc != 4) {
-        printf("usage: ./fifo <,message size> <mins-to-run> <run_number>\n");
+        printf("usage: ./fifo <message-size> <mins-to-run> <run-number>\n");
         return 1;
     }
 
@@ -209,20 +209,13 @@ int main(int argc, char *argv[]) {
                 unlink("./fifo-ipc2");
                 return 1;
             }
-	    if (msgtot == buf->seq) {   // ensure correct ordering
-	        if (write(fd2, buf, size) != size) {       // send message back to parent
-                     perror("second write");
-                     unlink("./fifo-ipc1");
-                     unlink("./fifo-ipc2");
-		     exit(1);
-                 }
-	    }
-	    else {
-		    printf("We did not match the sequence on 1st send.\n");
-            unlink("./fifo-ipc1");
-            unlink("./fifo-ipc2");
-		    exit(1);
-	    }
+	    
+	    if (write(fd2, buf, size) != size) {       // send message back to parent
+                perror("second write");
+                unlink("./fifo-ipc1");
+                unlink("./fifo-ipc2");
+	        exit(1);
+            }    
 	    msgtot++;
             sum += n;
         }
@@ -237,7 +230,6 @@ int main(int argc, char *argv[]) {
     } else {   // child
 
         gettimeofday(&begin, NULL);
-
 	start = time(NULL);
 
 	msgtot=0;
@@ -260,60 +252,52 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
             // printf("buf2=%s\n", (char*)buf+SIZE_OF_USED_BUFFER); 
-            
-	    if  (msgtot == new_size)  {
-		    new_size += ARRAY_BOOST;
-                    double *latencies_tmp = realloc(latencies, new_size * sizeof(double)); 
-		    if (latencies_tmp == NULL)  {
-			printf("Size increase of latencies array failed.\n");
-	                return 1;
-		    }
+    
+            gettimeofday(&tv_post_read, NULL);   // capture round trip timestamp
+            //printf("%.0f buf->tv_time_sent %d   second read \n", (double) buf->tv_time_sent.tv_usec, buf->seq); 
+            time_elapsed = time_diff(buf->tv_time_sent, tv_post_read);   // get latency
+            lat[msgtot].start_time = ((double) buf->tv_time_sent.tv_sec*1000000 + (double)buf->tv_time_sent.tv_usec);
+            latencies[msgtot] = time_elapsed;
+            lat[msgtot].end_time = ((double) tv_post_read.tv_sec*1000000 + (double)tv_post_read.tv_usec);
+            tot_elapsed += time_elapsed;
 
-		    latencies_arr *lat_tmp = realloc(lat, new_size * sizeof(latencies_arr));
-		    if (lat_tmp == NULL)  {
-			printf("Size increase of lat structure array failed.\n");
-	                return 1;
-		    }
-		    latencies = latencies_tmp;
-		    lat = lat_tmp;
-	     }
-	    
-	    if (msgtot == buf->seq) {                // ensure correct ordering
-                gettimeofday(&tv_post_read, NULL);   // capture round trip timestamp
-                //printf("%.0f buf->tv_time_sent %d   second read \n", (double) buf->tv_time_sent.tv_usec, buf->seq); 
-                time_elapsed = time_diff(buf->tv_time_sent, tv_post_read);   // get latency
-                lat[msgtot].start_time = ((double) buf->tv_time_sent.tv_sec*1000000 + (double)buf->tv_time_sent.tv_usec);
-                latencies[msgtot] = time_elapsed;
-                lat[msgtot].end_time = ((double) tv_post_read.tv_sec*1000000 + (double)tv_post_read.tv_usec);
-                tot_elapsed += time_elapsed;
-            }
-            else {
-                    printf("We did not match the sequence on return.\n");
-                    unlink("./fifo-ipc1");
-                    unlink("./fifo-ipc2");
-                    exit(1);
-            }
-	        msgtot++;
+    	    msgtot++;
+         
+            if  (msgtot == new_size)  {
+                    new_size += ARRAY_BOOST;
+                    double *latencies_tmp = realloc(latencies, new_size * sizeof(double));
+                    if (latencies_tmp == NULL)  {
+                        printf("Size increase of the latencies array failed.\n");
+                        return 1;
+                    }
+
+                    latencies_arr *lat_tmp = realloc(lat, new_size * sizeof(latencies_arr));
+                    if (lat_tmp == NULL)  {
+                        printf("Size increase of the lat structure array failed.\n");
+                        return 1;
+                    }
+                    latencies = latencies_tmp;
+                    lat = lat_tmp;
+             }
         }
 
         gettimeofday(&end, NULL);
 
         double tm = getdetlatimeofday(&begin, &end);
 
-
-        printf("%.0fMB/s\n", msgtot * size * 1.0 / (tm * 1024 * 1024));
-        printf("%.0fmsg/s\n", msgtot * 1.0 / tm);
+        printf("%.0fMB/s\n", (msgtot*2) * size * 1.0 / (tm * 1024 * 1024));  // we double msgtot as the message went to parent and back 
+        printf("%.0fmsg/s\n", (msgtot*2) * 1.0 / tm);
 
         avg_elapsed = tot_elapsed/msgtot;
         ninetyninth = (msgtot*0.99)-1;
         ninetyfifth = (msgtot*0.95)-1;
 
-        fprintf(outfile_latencies, "{\n");
+        fprintf(outfile_latencies, "[\n");
         for (ctr = 0; ctr < msgtot-1; ctr++) {
-            fprintf(outfile_latencies, "  {\"start-time\": %.0f, \"latency\": %.0f, \"end-time\": %.0f},\n ", lat[ctr].start_time, latencies[ctr], lat[ctr].end_time);
+            fprintf(outfile_latencies, "  {\"start-time\": %.0f, \"latency\": %.0f, \"end-time\": %.0f},\n", lat[ctr].start_time, latencies[ctr], lat[ctr].end_time);
         }
         
-        fprintf(outfile_latencies, "  {\"start-time\": %.0f, \"latency\": %.0f, \"end-time\": %.0f}\n}", lat[msgtot-1].start_time, latencies[msgtot-1], lat[msgtot-1].end_time);
+        fprintf(outfile_latencies, "  {\"start-time\": %.0f, \"latency\": %.0f, \"end-time\": %.0f}\n]", lat[msgtot-1].start_time, latencies[msgtot-1], lat[msgtot-1].end_time);
 
         qsort( latencies, msgtot, sizeof(double), compare_double );
 

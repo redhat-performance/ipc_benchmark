@@ -16,7 +16,7 @@
 #define SECONDS_PER_MINUTE 60
 #define SIZE_OF_USED_BUFFER 24    /* we put a sequence number and a timestamp at the beginning
                                   of the buffer */
-#define  ARRAY_BOOST 20000        /* The size of the array initially and how much to increase it's
+#define ARRAY_BOOST 20000         /* The size of the array initially and how much to increase it's
                                   size as it grows */   
 
 
@@ -54,6 +54,8 @@
  *
  */
 
+
+/* create a buffer of random upper case letters */
 int populate_buf(char *, int);
 double getdetlatimeofday(struct timeval *, struct timeval *);
 double time_diff(struct timeval , struct timeval );
@@ -63,12 +65,15 @@ typedef struct  {
       double end_time;
 } latencies_arr;
 
+/* get the delta between two time snapshots */ 
 double
 getdetlatimeofday(struct timeval *begin, struct timeval *end)
 {
     return (end->tv_sec + end->tv_usec * 1.0 / 1000000) -
            (begin->tv_sec + begin->tv_usec * 1.0 / 1000000);
 }
+
+/* determine the latency between two timestamps */
 double
 time_diff(struct timeval x , struct timeval y)
 {
@@ -138,7 +143,7 @@ int main(int argc, char *argv[])
 
     if (argc != 4)
     {
-	printf("usage: ./uds <message size> <mins-to-run> <run_number\n");
+	printf("usage: ./uds <message-size> <mins-to-run> <run-number\n");
         return 1;
     }
 
@@ -165,7 +170,8 @@ int main(int argc, char *argv[])
     outfile_latencies = fopen(latencies_file,"w");
 
     memset(&un, 0, sizeof(un));
-    if (fork() == 0)   /* parent */
+    
+    if (fork() == 0)   	             /* parent */
     {
         fd = socket(AF_UNIX, SOCK_STREAM, 0);
         unlink("./uds-ipc");
@@ -193,14 +199,14 @@ int main(int argc, char *argv[])
             unlink("./uds-ipc");
             return 1;
         }
-        sum = 0;
+        sum = 0;      // to capture total number bytes sent
 	
-        msgtot=0;     // sequence of each message sent
+        msgtot=0;     // counter for messages sent
 
         start = time(NULL);
         while (time(NULL) - start < (time_t) ( mins * (SECONDS_PER_MINUTE )))  {     // run for "mins" minutes
         
-            n = read(nfd, buf, size);
+            n = read(nfd, buf, size);    // read msg sent from child
             if (n == 0)
             {
                 break;
@@ -211,39 +217,33 @@ int main(int argc, char *argv[])
                 unlink("./uds-ipc");
                 return 1;
             }
+            
+            gettimeofday(&tv_post_read, NULL);         // timestamp after message sent 
+	    //printf("buf1=%s\n", (char*) buf+SIZE_OF_USED_BUFFER);
+            time_elapsed = time_diff(buf->tv_time_sent, tv_post_read);     // calc latency
+            lat[msgtot].start_time = ((double) buf->tv_time_sent.tv_sec*1000000 + (double)buf->tv_time_sent.tv_usec);
+            latencies[msgtot] = time_elapsed;                             
+            lat[msgtot].end_time = ((double) tv_post_read.tv_sec*1000000 + (double)tv_post_read.tv_usec);
+            tot_elapsed+=time_elapsed;
+        
+            msgtot++;
+            sum += n;
             if  (msgtot == new_size)  {
                 new_size += ARRAY_BOOST;
-                        double *latencies_tmp = realloc(latencies, new_size * sizeof(double)); 
+                double *latencies_tmp = realloc(latencies, new_size * sizeof(double));
                 if (latencies_tmp == NULL)  {
-                printf("Size increase of latencies array failed.\n");
-                        return 1;
+                    printf("Size increase of latencies array failed.\n");
+                    return 1;
                 }
     
                 latencies_arr *lat_tmp = realloc(lat, new_size * sizeof(latencies_arr));
                 if (lat_tmp == NULL)  {
-                printf("Size increase of lat structure array failed.\n");
-                        return 1;
+                    printf("Size increase of lat structure array failed.\n");
+                    return 1;
                 }
                 latencies = latencies_tmp;
                 lat = lat_tmp;
              }
-             
-             if (msgtot == buf->seq) {                      // verify messages in sync
-                gettimeofday(&tv_post_read, NULL);         // timestamp after message sent 
-		        //printf("buf1=%s\n", (char*) buf+SIZE_OF_USED_BUFFER);
-                time_elapsed = time_diff(buf->tv_time_sent, tv_post_read);     // calc latency
-                lat[msgtot].start_time = ((double) buf->tv_time_sent.tv_sec*1000000 + (double)buf->tv_time_sent.tv_usec);
-                latencies[msgtot] = time_elapsed;                             
-                lat[msgtot].end_time = ((double) tv_post_read.tv_sec*1000000 + (double)tv_post_read.tv_usec);
-                tot_elapsed+=time_elapsed;
-            }
-            else {
-                    printf("We did not match a sequence.  %ld    %d\n", msgtot, buf->seq);
-                    unlink("./uds-ipc");
-                    exit(1);
-            }
-            msgtot++;
-            sum += n;
         }
 
         if (sum != msgtot * size)     // if not *all* the data is sent/received...
@@ -257,11 +257,11 @@ int main(int argc, char *argv[])
         ninetyninth=(msgtot*0.99)-1;
         ninetyfifth=(msgtot*0.95)-1;
         
-        fprintf(outfile_latencies, "{\n");     // write out latency data
+        fprintf(outfile_latencies, "[\n");     // write out latency data
         for (ctr = 0; ctr < msgtot-1; ctr++) {
-            fprintf(outfile_latencies, "  {\"start-time\": %.0f, \"latency\": %.0f, \"end-time\": %.0f},\n ", lat[ctr].start_time, latencies[ctr], lat[ctr].end_time);
+            fprintf(outfile_latencies, "  {\"start-time\": %.0f, \"latency\": %.0f, \"end-time\": %.0f},\n", lat[ctr].start_time, latencies[ctr], lat[ctr].end_time);
         }
-        fprintf(outfile_latencies, "  {\"start-time\": %.0f, \"latency\": %.0f, \"end-time\": %.0f}\n}", lat[msgtot-1].start_time, latencies[msgtot-1], lat[msgtot-1].end_time);
+        fprintf(outfile_latencies, "  {\"start-time\": %.0f, \"latency\": %.0f, \"end-time\": %.0f}\n]", lat[msgtot-1].start_time, latencies[msgtot-1], lat[msgtot-1].end_time);
 
         qsort(latencies, msgtot, sizeof(double), compare_double );
 
@@ -273,7 +273,7 @@ int main(int argc, char *argv[])
 
         printf("The total messages sent to and from the child: %ld\n", msgtot);
     }
-    else  /* child */
+    else                         /* child */
     {
         sleep(1);
 

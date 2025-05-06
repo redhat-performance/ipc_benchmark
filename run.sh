@@ -11,7 +11,7 @@ starttime=`date`
 ulimit -s unlimited
 ipcrm --all
 
-ipc_tests="uds fifo shm"
+ipc_tests="shm uds fifo "
 #ipc_tests="shm fifo uds"
 
 udp_sizes="128 256 512 1024 2048 4096"
@@ -101,6 +101,7 @@ do
 
     for tsize in ${ipc_sizes}
     do
+            ipcrm --all
 	    ./${test} ${tsize} ${mins} ${iter} > results.txt
 	    line0="${line0}|${tsize}"
 	    sleep 1
@@ -111,6 +112,7 @@ do
 	    line5="${line5}|$(grep MAX results.txt)"
 	    line6="${line6}|$(grep 95th results.txt)"
 	    line7="${line7}|$(grep 99th results.txt)"
+            gzip ${test}_latencies_${tsize}_${iter}.json
     done
   write_log "${line0}"
   write_log "${line1}"
@@ -135,5 +137,7 @@ endtime=`date`
 
 echo "script started:  " $starttime
 echo "script ended  :  " $endtime
+
+cat /etc/bui* 
 
 exit
